@@ -13,12 +13,7 @@ st.title("📊 Analisador de Avaliação Institucional")
 
 # Upload de arquivo
 uploaded_file = st.file_uploader("Selecione o arquivo Excel", type=["xls", "xlsx"])
-if uploaded_file:
-    with st.spinner("⏳ Processando a planilha, aguarde..."):
-        resultados = processar_excel(uploaded_file)
 
-    if resultados:
-        st.success("✅ Relatório processado com sucesso!")
 
 def processar_excel(arquivo_excel):
     df = pd.read_excel(arquivo_excel)
@@ -92,5 +87,70 @@ def processar_excel(arquivo_excel):
                                                  soma_pontos, f"{media:.2f}", f"{porcentual:.2f}%"])
 
                             soma_ponderada_total += soma_pontos
-                            tot
+                            total_respostas_total += total_respostas
 
+                        media_geral_ponderada = (soma_ponderada_total / (total_respostas_total * 5)) * 100 if total_respostas_total > 0 else 0
+                        chave_resultado = (professor, curso, questionario, disciplina, unidade_ensino)
+                        todos_resultados[chave_resultado] = (tabela_dados, media_geral_ponderada)
+
+    return todos_resultados
+
+
+def gerar_pdf(todos_resultados):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+    estilos = getSampleStyleSheet()
+
+    estilo_titulo = ParagraphStyle(name='Arial10', fontSize=10, leading=12, textColor=colors.black, alignment=TA_LEFT)
+    estilo_media_geral = ParagraphStyle(name='Arial12Center', fontSize=12, leading=14, textColor=colors.black, alignment=TA_CENTER)
+
+    conteudo = []
+    for (professor, curso, questionario, disciplina, unidade_ensino), (tabela_dados, media_geral_ponderada) in todos_resultados.items():
+        conteudo.append(Paragraph(f"Nome do Professor: {professor}", estilo_titulo))
+        conteudo.append(Paragraph(f"Curso: {curso}", estilo_titulo))
+        conteudo.append(Paragraph(f"Questionário: {questionario}", estilo_titulo))
+        conteudo.append(Paragraph(f"Unidade de Ensino: {unidade_ensino}", estilo_titulo))
+        conteudo.append(Paragraph(f"Disciplina: {disciplina}", estilo_titulo))
+        conteudo.append(Spacer(1, 6))
+
+        t = Table(tabela_dados, colWidths=[None] * len(tabela_dados[0]))
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTSIZE', (0, 0), (-1, -1), 6),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.paleturquoise),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black)
+        ]))
+        conteudo.append(t)
+        conteudo.append(Spacer(1, 12))
+        conteudo.append(Paragraph(f"Média Geral (%): {media_geral_ponderada:.2f}%", estilo_media_geral))
+        conteudo.append(PageBreak())
+
+    if conteudo:
+        conteudo = conteudo[:-1]
+
+    doc.build(conteudo)
+    buffer.seek(0)
+    return buffer
+
+
+# --- PONTO EM QUE O SPINNER FOI COLOCADO ---
+if uploaded_file:
+    with st.spinner("⏳ Processando a planilha, aguarde..."):
+        resultados = processar_excel(uploaded_file)
+
+    if resultados:
+        st.success("✅ Relatório processado com sucesso!")
+        for (professor, curso, questionario, disciplina, unidade_ensino), (tabela_dados, media_geral) in resultados.items():
+            with st.expander(f"{professor} - {disciplina} ({curso}) [{questionario}] - {unidade_ensino}"):
+                st.table(pd.DataFrame(tabela_dados[1:], columns=tabela_dados[0]))
+                st.write(f"**Média Geral (%):** {media_geral:.2f}%")
+
+        pdf_buffer = gerar_pdf(resultados)
+        st.download_button(
+            label="📥 Baixar PDF",
+            data=pdf_buffer,
+            file_name="relatorio_avaliacao.pdf",
+            mime="application/pdf"
+        )
