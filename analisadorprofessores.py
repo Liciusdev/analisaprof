@@ -7,190 +7,135 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from io import BytesIO
 
-# ---------------- FUNÇÃO PROCESSAR ----------------
+st.set_page_config(page_title="Analisador de Avaliação Institucional", layout="wide")
+st.title("📊 Analisador de Avaliação Institucional")
+
+# ---------------- FUNÇÃO PROCESSAR OTIMIZADA ----------------
 def processar_excel(uploaded_file):
     df = pd.read_excel(uploaded_file)
 
     colunas_necessarias = [
-        "avaliacaoinstitucional",
-        "pergunta",
-        "nomeprofessor",
-        "nomecurso",
-        "nomedisciplina",
-        "nomeunidadeensino"  
+        "avaliacaoinstitucional", "pergunta", "nomeprofessor",
+        "nomecurso", "nomedisciplina", "nomeunidadeensino"
     ]
     for coluna in colunas_necessarias:
         if coluna not in df.columns:
             st.error(f"A coluna '{coluna}' não foi encontrada no arquivo Excel.")
             return None
 
-    professores = df["nomeprofessor"].unique().tolist()
-    cursos = df["nomecurso"].unique().tolist()
-    questionarios = df["avaliacaoinstitucional"].unique().tolist()
-    unidades_ensino = df["nomeunidadeensino"].unique().tolist()  
+    # Normalizar respostas
+    def normalizar_resposta(x):
+        x = str(x).upper().strip()
+        if x == "MUITO BOM":
+            return "MUITO_BOM"
+        elif x == "ÓTIMO":
+            return "OTIMO"
+        elif x == "NÃO SEI OU NÃO TENHO CONDIÇÕES DE AVALIAR":
+            return "NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR"
+        elif x in ["BOM", "REGULAR", "RUIM"]:
+            return x
+        else:
+            return "NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR"
 
+    df['resposta'] = df.drop(columns=colunas_necessarias).bfill(axis=1).iloc[:,0]
+    df['resposta'] = df['resposta'].apply(normalizar_resposta)
+
+    # Agrupar dados
     todos_resultados = {}
+    grupos = df.groupby(['nomeprofessor','nomecurso','avaliacaoinstitucional','nomeunidadeensino','nomedisciplina','pergunta'])
 
-    for professor in professores:
-        for curso in cursos:
-            for questionario in questionarios:
-                for unidade_ensino in unidades_ensino:  
-                    df_filtrado = df[
-                        (df["nomeprofessor"] == professor) &
-                        (df["nomecurso"] == curso) &
-                        (df["avaliacaoinstitucional"] == questionario) &
-                        (df["nomeunidadeensino"] == unidade_ensino)
-                    ].copy()
+    total_grupos = len(df.groupby(['nomeprofessor','nomecurso','avaliacaoinstitucional','nomeunidadeensino','nomedisciplina']))
+    contador = 0
+    progress_bar = st.progress(0)
 
-                    disciplinas = df_filtrado["nomedisciplina"].unique().tolist()
-                    for disciplina in disciplinas:
-                        df_disciplina = df_filtrado[df_filtrado["nomedisciplina"] == disciplina].copy()
-                        resultados_disciplina = {}
+    for (professor, curso, questionario, unidade, disciplina), grupo in df.groupby(['nomeprofessor','nomecurso','avaliacaoinstitucional','nomeunidadeensino','nomedisciplina']):
+        resultados_disciplina = {}
 
-                        for _, row in df_disciplina.iterrows():
-                            pergunta = row["pergunta"]
-                            colunas_restantes = row.drop(colunas_necessarias).dropna()
-                            resposta = str(colunas_restantes.iloc[0]).strip().upper() if not colunas_restantes.empty else "NÃO AVALIADO"
+        for pergunta, subgrupo in grupo.groupby('pergunta'):
+            contagem = subgrupo['resposta'].value_counts().to_dict()
+            resultados_disciplina[pergunta] = {
+                "BOM": contagem.get("BOM",0),
+                "MUITO_BOM": contagem.get("MUITO_BOM",0),
+                "OTIMO": contagem.get("OTIMO",0),
+                "REGULAR": contagem.get("REGULAR",0),
+                "RUIM": contagem.get("RUIM",0),
+                "NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR": contagem.get("NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR",0)
+            }
 
-                            if pergunta not in resultados_disciplina:
-                                resultados_disciplina[pergunta] = {
-                                    "BOM": 0,
-                                    "MUITO_BOM": 0,
-                                    "OTIMO": 0,
-                                    "REGULAR": 0,
-                                    "RUIM": 0,
-                                    "NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR": 0
-                                }
+        # Montar tabela
+        tabela_dados = [["PERGUNTAS", "NÃO SEI(0)", "R(1)", "REG(2)", "B(3)", "MB(4)", "O(5)", "SOMA", "MÉDIA", "PORC"]]
+        soma_total, respostas_total = 0,0
 
-                            if resposta in ["BOM", "MUITO BOM", "ÓTIMO", "REGULAR", "RUIM", "NÃO SEI OU NÃO TENHO CONDIÇÕES DE AVALIAR"]:
-                                resposta = resposta.replace("MUITO BOM", "MUITO_BOM")
-                                chave = resposta.replace("Ó", "O").replace("Ã", "A").replace(" ", "_")
+        for pergunta, cont in resultados_disciplina.items():
+            bom = cont["BOM"]; muito_bom = cont["MUITO_BOM"]; otimo = cont["OTIMO"]
+            regular = cont["REGULAR"]; ruim = cont["RUIM"]; nao_sei = cont["NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR"]
 
-                                if chave in resultados_disciplina[pergunta]:
-                                    resultados_disciplina[pergunta][chave] += 1
-                                else:
-                                    print(f"Aviso: chave '{chave}' não reconhecida para pergunta '{pergunta}'")
+            soma_pontos = bom*3 + muito_bom*4 + otimo*5 + regular*2 + ruim*1
+            total_respostas = bom + muito_bom + otimo + regular + ruim
+            media = soma_pontos/total_respostas if total_respostas>0 else 0
+            porcentual = (soma_pontos/(total_respostas*5))*100 if total_respostas>0 else 0
 
-                        tabela_dados = [
-                            ["PERGUNTAS", "NÃO SEI(0)", "R(1)", "REG(2)", "B(3)", "MB(4)", "O(5)", "SOMA", "MÉDIA", "PORC"]
-                        ]
+            tabela_dados.append([pergunta,nao_sei,ruim,regular,bom,muito_bom,otimo,soma_pontos,f"{media:.2f}",f"{porcentual:.2f}%"])
+            soma_total += soma_pontos
+            respostas_total += total_respostas
 
-                        soma_ponderada_total = 0
-                        total_respostas_total = 0
-                        for pergunta, contagens in resultados_disciplina.items():
-                            bom = contagens.get("BOM", 0)
-                            muito_bom = contagens.get("MUITO_BOM", 0)
-                            otimo = contagens.get("OTIMO", 0)
-                            regular = contagens.get("REGULAR", 0)
-                            ruim = contagens.get("RUIM", 0)
-                            nao_sei = contagens.get("NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR", 0)
+        media_geral = (soma_total/(respostas_total*5))*100 if respostas_total>0 else 0
+        chave = (professor,curso,questionario,disciplina,unidade)
+        todos_resultados[chave] = (tabela_dados, media_geral)
 
-                            soma_pontos = (
-                                bom * 3 +
-                                muito_bom * 4 +
-                                otimo * 5 +
-                                regular * 2 +
-                                ruim * 1
-                            )
-                            total_respostas = bom + muito_bom + otimo + regular + ruim
-                            media = soma_pontos / total_respostas if total_respostas > 0 else 0
-                            porcentual = (soma_pontos / (total_respostas * 5)) * 100 if total_respostas > 0 else 0
-
-                            tabela_dados.append([
-                                pergunta,
-                                str(nao_sei),
-                                str(ruim),
-                                str(regular),
-                                str(bom),
-                                str(muito_bom),
-                                str(otimo),
-                                str(soma_pontos),
-                                f"{media:.2f}",
-                                f"{porcentual:.2f}%"
-                            ])
-
-                            soma_ponderada_total += soma_pontos
-                            total_respostas_total += total_respostas
-
-                        media_geral_ponderada = (soma_ponderada_total / (total_respostas_total * 5)) * 100 if total_respostas_total > 0 else 0
-                        chave_resultado = (professor, curso, questionario, disciplina, unidade_ensino)
-                        todos_resultados[chave_resultado] = (tabela_dados, media_geral_ponderada)
+        contador += 1
+        progress_bar.progress(contador/total_grupos)
 
     return todos_resultados
 
-# ---------------- FUNÇÃO PDF ----------------
+# ---------------- FUNÇÃO GERAR PDF ----------------
 def gerar_pdf(todos_resultados):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
-    estilos = getSampleStyleSheet()
-
-    estilo_titulo = ParagraphStyle(
-        name='Arial10',
-        fontSize=10,
-        leading=12,
-        textColor=colors.black,
-        alignment=TA_LEFT,
-    )
-    estilo_media_geral = ParagraphStyle(
-        name='Arial12Center',
-        fontSize=12,
-        leading=14,
-        textColor=colors.black,
-        alignment=TA_CENTER,
-    )
-
+    estilo_titulo = ParagraphStyle(name='Arial10', fontSize=10, leading=12, textColor=colors.black, alignment=TA_LEFT)
+    estilo_media = ParagraphStyle(name='Arial12Center', fontSize=12, leading=14, textColor=colors.black, alignment=TA_CENTER)
     conteudo = []
-    for (professor, curso, questionario, disciplina, unidade_ensino), (tabela_dados, media_geral_ponderada) in todos_resultados.items():  
-        conteudo.append(Paragraph(f"Nome do Professor: {professor}", estilo_titulo))
+
+    for (professor,curso,questionario,disciplina,unidade),(tabela,media) in todos_resultados.items():
+        conteudo.append(Paragraph(f"Professor: {professor}", estilo_titulo))
         conteudo.append(Paragraph(f"Curso: {curso}", estilo_titulo))
         conteudo.append(Paragraph(f"Questionário: {questionario}", estilo_titulo))
-        conteudo.append(Paragraph(f"Unidade de Ensino: {unidade_ensino}", estilo_titulo))  
+        conteudo.append(Paragraph(f"Unidade: {unidade}", estilo_titulo))
         conteudo.append(Paragraph(f"Disciplina: {disciplina}", estilo_titulo))
-        conteudo.append(Spacer(1, 6))  
-
-        t = Table(tabela_dados, colWidths=[None] * 10)
+        conteudo.append(Spacer(1,6))
+        t = Table(tabela, colWidths=[None]*10)
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTSIZE', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 3),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.paleturquoise),  
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),  
-            ('WORDWRAP', (0, 0), (-1, -1), 1),  
+            ('BACKGROUND',(0,0),(-1,0),colors.grey),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ('FONTSIZE',(0,0),(-1,-1),6),
+            ('BACKGROUND',(0,1),(-1,-1),colors.paleturquoise),
+            ('GRID',(0,0),(-1,-1),0.5,colors.black)
         ]))
         conteudo.append(t)
-        conteudo.append(Spacer(1, 12))
-        conteudo.append(Paragraph(f"Média Geral (%): {media_geral_ponderada:.2f}%", estilo_media_geral)) 
-        conteudo.append(PageBreak())  
+        conteudo.append(Spacer(1,12))
+        conteudo.append(Paragraph(f"Média Geral (%): {media:.2f}", estilo_media))
+        conteudo.append(PageBreak())
 
-    if len(todos_resultados) > 0:
-        conteudo = conteudo[:-1]  # remove último PageBreak
-
+    if conteudo:
+        conteudo = conteudo[:-1]
     doc.build(conteudo)
     buffer.seek(0)
     return buffer
 
 # ---------------- INTERFACE STREAMLIT ----------------
-st.title("📊 Analisador de Avaliação Institucional")
-
-uploaded_file = st.file_uploader("Selecione o arquivo Excel", type=["xls", "xlsx"])
+uploaded_file = st.file_uploader("Selecione o arquivo Excel", type=["xls","xlsx"])
 
 if uploaded_file:
-    with st.spinner("⏳ Processando a planilha, aguarde..."):
+    with st.spinner("⏳ Processando a planilha..."):
         resultados = processar_excel(uploaded_file)
 
     if resultados:
-        st.success("✅ Relatório processado com sucesso!")
-        for (professor, curso, questionario, disciplina, unidade_ensino), (tabela_dados, media_geral) in resultados.items():
-            with st.expander(f"{professor} - {disciplina} ({curso}) [{questionario}] - {unidade_ensino}"):
-                st.table(pd.DataFrame(tabela_dados[1:], columns=tabela_dados[0]))
-                st.write(f"**Média Geral (%):** {media_geral:.2f}%")
+        st.success("✅ Relatório processado!")
+        for (professor,curso,questionario,disciplina,unidade),(tabela,media) in resultados.items():
+            with st.expander(f"{professor} - {disciplina} ({curso}) [{questionario}] - {unidade}"):
+                st.table(pd.DataFrame(tabela[1:],columns=tabela[0]))
+                st.write(f"**Média Geral (%):** {media:.2f}")
 
         pdf_buffer = gerar_pdf(resultados)
-        st.download_button(
-            label="📥 Baixar PDF",
-            data=pdf_buffer,
-            file_name="relatorio_avaliacao.pdf",
-            mime="application/pdf"
-        )
+        st.download_button("📥 Baixar PDF", pdf_buffer, file_name="relatorio_avaliacao.pdf", mime="application/pdf")
