@@ -60,10 +60,10 @@ def processar_excel(arquivo_excel):
 
                             if pergunta not in resultados_disciplina:
                                 resultados_disciplina[pergunta] = {
-                                    "BOM": 0, "MUITO BOM": 0, "OTIMO": 0, "REGULAR": 0,
+                                    "BOM": 0, "MUITO_BOM": 0, "OTIMO": 0, "REGULAR": 0,
                                     "RUIM": 0, "NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR": 0
                                 }
-                            if resposta in ["BOM", "MUITO BOM", "ÓTIMO", "REGULAR", "RUIM", "NÃO SEI OU NÃO TENHO CONDIÇÕES DE AVALIAR"]:
+                            if resposta in ["BOM", "MUITO_BOM", "ÓTIMO", "REGULAR", "RUIM", "NÃO SEI OU NÃO TENHO CONDIÇÕES DE AVALIAR"]:
                                 chave = resposta.replace("Ó", "O").replace("Ã", "A").replace(" ", "_")
                                 resultados_disciplina[pergunta][chave] += 1
 
@@ -72,7 +72,7 @@ def processar_excel(arquivo_excel):
 
                         for pergunta, contagens in resultados_disciplina.items():
                             bom = contagens.get("BOM", 0)
-                            muito_bom = contagens.get("MUITO BOM", 0)
+                            muito_bom = contagens.get("MUITO_BOM", 0)
                             otimo = contagens.get("OTIMO", 0)
                             regular = contagens.get("REGULAR", 0)
                             ruim = contagens.get("RUIM", 0)
@@ -154,3 +154,4 @@ if uploaded_file:
             file_name="relatorio_avaliacao.pdf",
             mime="application/pdf"
         )
+
