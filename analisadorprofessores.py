@@ -13,7 +13,12 @@ st.title("📊 Analisador de Avaliação Institucional")
 
 # Upload de arquivo
 uploaded_file = st.file_uploader("Selecione o arquivo Excel", type=["xls", "xlsx"])
+if uploaded_file:
+    with st.spinner("⏳ Processando a planilha, aguarde..."):
+        resultados = processar_excel(uploaded_file)
 
+    if resultados:
+        st.success("✅ Relatório processado com sucesso!")
 
 def processar_excel(arquivo_excel):
     df = pd.read_excel(arquivo_excel)
@@ -88,3 +93,4 @@ def processar_excel(arquivo_excel):
 
                             soma_ponderada_total += soma_pontos
                             tot
+
