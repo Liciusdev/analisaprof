@@ -10,7 +10,6 @@ from io import BytesIO
 st.set_page_config(page_title="Analisador de Avaliação Institucional", layout="wide")
 st.title("📊 Analisador de Avaliação Institucional")
 
-# ---------------- FUNÇÃO PROCESSAR OTIMIZADA ----------------
 def processar_excel(uploaded_file):
     df = pd.read_excel(uploaded_file)
 
@@ -23,7 +22,6 @@ def processar_excel(uploaded_file):
             st.error(f"A coluna '{coluna}' não foi encontrada no arquivo Excel.")
             return None
 
-    # Normalizar respostas
     def normalizar_resposta(x):
         x = str(x).upper().strip()
         if x == "MUITO BOM":
@@ -40,7 +38,6 @@ def processar_excel(uploaded_file):
     df['resposta'] = df.drop(columns=colunas_necessarias).bfill(axis=1).iloc[:,0]
     df['resposta'] = df['resposta'].apply(normalizar_resposta)
 
-    # Agrupar dados
     todos_resultados = {}
     grupos = df.groupby(['nomeprofessor','nomecurso','avaliacaoinstitucional','nomeunidadeensino','nomedisciplina','pergunta'])
 
@@ -62,7 +59,6 @@ def processar_excel(uploaded_file):
                 "NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR": contagem.get("NAO_SEI_OU_NAO_TENHO_CONDICOES_DE_AVALIAR",0)
             }
 
-        # Montar tabela
         tabela_dados = [["PERGUNTAS", "NÃO SEI(0)", "R(1)", "REG(2)", "B(3)", "MB(4)", "O(5)", "SOMA", "MÉDIA", "PORC"]]
         soma_total, respostas_total = 0,0
 
@@ -87,8 +83,7 @@ def processar_excel(uploaded_file):
         progress_bar.progress(contador/total_grupos)
 
     return todos_resultados
-
-# ---------------- FUNÇÃO GERAR PDF ----------------
+    
 def gerar_pdf(todos_resultados):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
@@ -123,7 +118,6 @@ def gerar_pdf(todos_resultados):
     buffer.seek(0)
     return buffer
 
-# ---------------- INTERFACE STREAMLIT ----------------
 uploaded_file = st.file_uploader("Selecione o arquivo Excel", type=["xls","xlsx"])
 
 if uploaded_file:
@@ -141,5 +135,6 @@ if uploaded_file:
 
         pdf_buffer = gerar_pdf(resultados)
         st.download_button("📥 Baixar PDF", pdf_buffer, file_name="relatorio_avaliacao.pdf", mime="application/pdf")
+
 
 
