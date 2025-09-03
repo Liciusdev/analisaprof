@@ -132,10 +132,13 @@ if uploaded_file:
 
     if resultados:
         st.success("✅ Relatório processado!")
+        """
         for (professor,curso,questionario,disciplina,unidade),(tabela,media) in resultados.items():
             with st.expander(f"{professor} - {disciplina} ({curso}) [{questionario}] - {unidade}"):
                 st.table(pd.DataFrame(tabela[1:],columns=tabela[0]))
                 st.write(f"**Média Geral (%):** {media:.2f}")
+                """
 
         pdf_buffer = gerar_pdf(resultados)
         st.download_button("📥 Baixar PDF", pdf_buffer, file_name="relatorio_avaliacao.pdf", mime="application/pdf")
+
